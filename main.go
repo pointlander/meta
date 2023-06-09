@@ -59,6 +59,20 @@ type Dense struct {
 	D *mat.Dense
 }
 
+// Polynomial is a polynomial
+type Polynomial struct {
+	Coefficients []float64
+}
+
+// Matrix is a matrix of polynomials
+type Matrix struct {
+	Rows        int
+	Cols        int
+	Order       int
+	Variables   int
+	Polynomials [][]Polynomial
+}
+
 // MulVecTo computes A*x or Aᵀ*x and stores the result into dst.
 func (d *Dense) MulVecTo(dst *mat.VecDense, trans bool, x mat.Vector) {
 	if trans {
