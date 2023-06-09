@@ -54,6 +54,20 @@ func L2Projection(grid []float64, f func(float64) float64) System {
 	return System{A, b}
 }
 
+// Dense is a dense matrix
+type Dense struct {
+	D *mat.Dense
+}
+
+// MulVecTo computes A*x or Aᵀ*x and stores the result into dst.
+func (d *Dense) MulVecTo(dst *mat.VecDense, trans bool, x mat.Vector) {
+	if trans {
+		dst.MulVec(d.D.T(), x)
+	} else {
+		dst.MulVec(d.D, x)
+	}
+}
+
 func main() {
 	const (
 		n  = 10
@@ -68,6 +82,21 @@ func main() {
 	})
 
 	result, err := linsolve.Iterative(sys.A, sys.B, &linsolve.CG{}, nil)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
+	fmt.Printf("Final solution: %.6f\n", mat.Formatted(result.X.T()))
+
+	// https://en.wikipedia.org/wiki/System_of_linear_equations
+	a := &Dense{
+		D: mat.NewDense(3, 3, []float64{3, 2, -1, 2, -2, 4, -1, .5, -1}),
+	}
+	b := mat.NewVecDense(3, []float64{1, -2, 0})
+
+	result, err = linsolve.Iterative(a, b, &linsolve.GMRES{}, nil)
 	if err != nil {
 		fmt.Println("Error:", err)
 		return
