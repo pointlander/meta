@@ -7,6 +7,7 @@ package main
 import (
 	"fmt"
 	"math"
+	"math/rand"
 
 	"gonum.org/v1/exp/linsolve"
 	"gonum.org/v1/gonum/floats"
@@ -61,7 +62,8 @@ type Dense struct {
 
 // Polynomial is a polynomial
 type Polynomial struct {
-	Coefficients []float64
+	Bias    float64
+	Weights [][]float64
 }
 
 // Matrix is a matrix of polynomials
@@ -71,6 +73,81 @@ type Matrix struct {
 	Order       int
 	Variables   int
 	Polynomials [][]Polynomial
+}
+
+// NewMatrix generates a new matrix
+func NewMatrix(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
+	polynomials := make([][]Polynomial, rows)
+	for i := range polynomials {
+		row := make([]Polynomial, cols)
+		for j := range row {
+			weights := make([][]float64, order)
+			for k := range weights {
+				weight := make([]float64, variables)
+				for l := range weight {
+					weight[l] = rnd.NormFloat64()
+				}
+				weights[k] = weight
+			}
+			row[j].Bias = rnd.NormFloat64()
+			row[j].Weights = weights
+		}
+		polynomials[i] = row
+	}
+	return Matrix{
+		Rows:        rows,
+		Cols:        cols,
+		Order:       order,
+		Variables:   variables,
+		Polynomials: polynomials,
+	}
+}
+
+// ToMatrix converts a matrix to a matrix
+func (m *Matrix) ToMatrix(parameters []float64) *Dense {
+	data := make([]float64, 0, m.Rows*m.Cols)
+	for _, row := range m.Polynomials {
+		for _, col := range row {
+			sum, prod := col.Bias, make([]float64, m.Variables)
+			for i := range prod {
+				prod[i] = 1
+			}
+			for _, weights := range col.Weights {
+				for i, weight := range weights {
+					prod[i] *= parameters[i]
+					sum += prod[i] * weight
+				}
+			}
+			data = append(data, sum)
+		}
+	}
+	return &Dense{
+		D: mat.NewDense(m.Rows, m.Cols, data),
+	}
+}
+
+// ToVec converts a matrix to a vector
+func (m *Matrix) ToVec(parameters []float64) *mat.VecDense {
+	if m.Cols != 1 {
+		panic(fmt.Errorf("cols should be 1 not %d", m.Cols))
+	}
+	data := make([]float64, 0, m.Rows)
+	for _, row := range m.Polynomials {
+		for _, col := range row {
+			sum, prod := col.Bias, make([]float64, m.Variables)
+			for i := range prod {
+				prod[i] = 1
+			}
+			for _, weights := range col.Weights {
+				for i, weight := range weights {
+					prod[i] *= parameters[i]
+					sum += prod[i] * weight
+				}
+			}
+			data = append(data, sum)
+		}
+	}
+	return mat.NewVecDense(m.Rows, data)
 }
 
 // MulVecTo computes A*x or Aᵀ*x and stores the result into dst.
@@ -119,4 +196,17 @@ func main() {
 	fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
 	fmt.Printf("Final solution: %.6f\n", mat.Formatted(result.X.T()))
 
+	rnd := rand.New(rand.NewSource(1))
+	aa := NewMatrix(rnd, 3, 3, 1, 4)
+	bb := NewMatrix(rnd, 3, 1, 1, 4)
+	aaa := aa.ToMatrix([]float64{1, 1, 1, 1})
+	bbb := bb.ToVec([]float64{1, 1, 1, 1})
+	result, err = linsolve.Iterative(aaa, bbb, &linsolve.GMRES{}, nil)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return
+	}
+
+	fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
+	fmt.Printf("Final solution: %.6f\n", mat.Formatted(result.X.T()))
 }
