@@ -9,6 +9,8 @@ import (
 	"math"
 	"math/rand"
 
+	"github.com/pointlander/datum/iris"
+
 	"gonum.org/v1/exp/linsolve"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
@@ -199,14 +201,37 @@ func main() {
 	rnd := rand.New(rand.NewSource(1))
 	aa := NewMatrix(rnd, 3, 3, 1, 4)
 	bb := NewMatrix(rnd, 3, 1, 1, 4)
-	aaa := aa.ToMatrix([]float64{1, 1, 1, 1})
-	bbb := bb.ToVec([]float64{1, 1, 1, 1})
-	result, err = linsolve.Iterative(aaa, bbb, &linsolve.GMRES{}, nil)
+	inference := func(in []float64) []float64 {
+		aaa := aa.ToMatrix(in)
+		bbb := bb.ToVec(in)
+		result, err = linsolve.Iterative(aaa, bbb, &linsolve.GMRES{}, nil)
+		if err != nil {
+			fmt.Println("Error:", err)
+			return nil
+		}
+
+		//fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
+		return result.X.RawVector().Data
+	}
+	fmt.Printf("Final solution: %.6f\n", inference([]float64{1, 1, 1, 1}))
+
+	datum, err := iris.Load()
 	if err != nil {
-		fmt.Println("Error:", err)
-		return
+		panic(err)
 	}
 
-	fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
-	fmt.Printf("Final solution: %.6f\n", mat.Formatted(result.X.T()))
+	cost := func() float64 {
+		fisher, cost := datum.Fisher, 0.0
+		for _, value := range fisher {
+			out := inference(value.Measures)
+			target := make([]float64, 3)
+			target[iris.Labels[value.Label]] = 1
+			for i, value := range out {
+				diff := target[i] - value
+				cost += diff * diff
+			}
+		}
+		return cost / 150
+	}
+	fmt.Println(cost())
 }
