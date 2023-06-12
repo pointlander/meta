@@ -161,6 +161,26 @@ func (d *Dense) MulVecTo(dst *mat.VecDense, trans bool, x mat.Vector) {
 	}
 }
 
+// Pair is a pair of matrices
+type Pair struct {
+	A *Matrix
+	B *Matrix
+}
+
+// Inference does inference on the pair
+func (p *Pair) Inference(in []float64) []float64 {
+	a := p.A.ToMatrix(in)
+	b := p.B.ToVec(in)
+	result, err := linsolve.Iterative(a, b, &linsolve.GMRES{}, nil)
+	if err != nil {
+		fmt.Println("Error:", err)
+		return nil
+	}
+
+	//fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
+	return result.X.RawVector().Data
+}
+
 func main() {
 	const (
 		n  = 10
@@ -199,21 +219,14 @@ func main() {
 	fmt.Printf("Final solution: %.6f\n", mat.Formatted(result.X.T()))
 
 	rnd := rand.New(rand.NewSource(1))
-	aa := NewMatrix(rnd, 3, 3, 1, 4)
-	bb := NewMatrix(rnd, 3, 1, 1, 4)
-	inference := func(in []float64) []float64 {
-		aaa := aa.ToMatrix(in)
-		bbb := bb.ToVec(in)
-		result, err = linsolve.Iterative(aaa, bbb, &linsolve.GMRES{}, nil)
-		if err != nil {
-			fmt.Println("Error:", err)
-			return nil
-		}
-
-		//fmt.Printf("# iterations: %v\n", result.Stats.Iterations)
-		return result.X.RawVector().Data
+	A := NewMatrix(rnd, 3, 3, 1, 4)
+	B := NewMatrix(rnd, 3, 1, 1, 4)
+	pair := Pair{
+		A: &A,
+		B: &B,
 	}
-	fmt.Printf("Final solution: %.6f\n", inference([]float64{1, 1, 1, 1}))
+
+	fmt.Printf("Final solution: %.6f\n", pair.Inference([]float64{1, 1, 1, 1}))
 
 	datum, err := iris.Load()
 	if err != nil {
@@ -223,7 +236,7 @@ func main() {
 	cost := func() float64 {
 		fisher, cost := datum.Fisher, 0.0
 		for _, value := range fisher {
-			out := inference(value.Measures)
+			out := pair.Inference(value.Measures)
 			target := make([]float64, 3)
 			target[iris.Labels[value.Label]] = 1
 			for i, value := range out {
