@@ -304,6 +304,7 @@ func main() {
 		sort.Slice(pairs, func(i, j int) bool {
 			return pairs[i].Cost < pairs[j].Cost
 		})
+		pairs = pairs[:100]
 		if rnd.Intn(2) == 0 {
 			if rnd.Intn(2) == 0 {
 				if rnd.Intn(4) == 0 {
@@ -397,6 +398,5 @@ func main() {
 				pairs = append(pairs, xx)
 			}
 		}
-		pairs = pairs[:100]
 	}
 }
