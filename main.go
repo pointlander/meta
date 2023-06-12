@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"math"
 	"math/rand"
+	"sort"
 
 	"github.com/pointlander/datum/iris"
 
@@ -68,6 +69,20 @@ type Polynomial struct {
 	Weights [][]float64
 }
 
+// Polynomial is a polynomial copy
+func (p *Polynomial) Copy() Polynomial {
+	q := Polynomial{
+		Bias:    p.Bias,
+		Weights: make([][]float64, 0, len(p.Weights)),
+	}
+	for _, w := range p.Weights {
+		weights := make([]float64, len(w))
+		copy(weights, w)
+		q.Weights = append(q.Weights, weights)
+	}
+	return q
+}
+
 // Matrix is a matrix of polynomials
 type Matrix struct {
 	Rows        int
@@ -75,6 +90,25 @@ type Matrix struct {
 	Order       int
 	Variables   int
 	Polynomials [][]Polynomial
+}
+
+// Copy makes a copy of matrix
+func (m *Matrix) Copy() Matrix {
+	n := Matrix{
+		Rows:        m.Rows,
+		Cols:        m.Cols,
+		Order:       m.Order,
+		Variables:   m.Variables,
+		Polynomials: make([][]Polynomial, len(m.Polynomials)),
+	}
+	for i, p := range m.Polynomials {
+		polynomials := make([]Polynomial, len(p))
+		for j := range polynomials {
+			polynomials[j] = m.Polynomials[i][j].Copy()
+		}
+		n.Polynomials[i] = polynomials
+	}
+	return n
 }
 
 // NewMatrix generates a new matrix
@@ -163,8 +197,19 @@ func (d *Dense) MulVecTo(dst *mat.VecDense, trans bool, x mat.Vector) {
 
 // Pair is a pair of matrices
 type Pair struct {
-	A *Matrix
-	B *Matrix
+	Cost float64
+	A    Matrix
+	B    Matrix
+}
+
+// Copy copies a pair
+func (p *Pair) Copy() Pair {
+	q := Pair{
+		Cost: p.Cost,
+		A:    p.A.Copy(),
+		B:    p.B.Copy(),
+	}
+	return q
 }
 
 // Inference does inference on the pair
@@ -219,11 +264,9 @@ func main() {
 	fmt.Printf("Final solution: %.6f\n", mat.Formatted(result.X.T()))
 
 	rnd := rand.New(rand.NewSource(1))
-	A := NewMatrix(rnd, 3, 3, 1, 4)
-	B := NewMatrix(rnd, 3, 1, 1, 4)
 	pair := Pair{
-		A: &A,
-		B: &B,
+		A: NewMatrix(rnd, 3, 3, 1, 4),
+		B: NewMatrix(rnd, 3, 1, 1, 4),
 	}
 
 	fmt.Printf("Final solution: %.6f\n", pair.Inference([]float64{1, 1, 1, 1}))
@@ -233,7 +276,12 @@ func main() {
 		panic(err)
 	}
 
-	cost := func() float64 {
+	pairs := make([]Pair, 100)
+	for i := range pairs {
+		pairs[i].A = NewMatrix(rnd, 3, 3, 1, 4)
+		pairs[i].B = NewMatrix(rnd, 3, 1, 1, 4)
+	}
+	cost := func(pair Pair) float64 {
 		fisher, cost := datum.Fisher, 0.0
 		for _, value := range fisher {
 			out := pair.Inference(value.Measures)
@@ -246,5 +294,109 @@ func main() {
 		}
 		return cost / 150
 	}
-	fmt.Println(cost())
+	fmt.Println(cost(pair))
+
+	for j := 0; j < 100; j++ {
+		fmt.Println(j, pairs[0].Cost)
+		for i := range pairs {
+			pairs[i].Cost = cost(pairs[i])
+		}
+		sort.Slice(pairs, func(i, j int) bool {
+			return pairs[i].Cost < pairs[j].Cost
+		})
+		if rnd.Intn(2) == 0 {
+			if rnd.Intn(2) == 0 {
+				if rnd.Intn(4) == 0 {
+					a, b := rnd.Intn(20), rnd.Intn(20)
+					arow := rnd.Intn(pairs[a].A.Rows)
+					acol := rnd.Intn(pairs[a].A.Cols)
+					brow := rnd.Intn(pairs[b].A.Rows)
+					bcol := rnd.Intn(pairs[b].A.Cols)
+					x := pairs[a].A.Polynomials[arow][acol].Bias
+					y := pairs[b].A.Polynomials[brow][bcol].Bias
+					xx := pairs[a].Copy()
+					yy := pairs[b].Copy()
+					xx.A.Polynomials[arow][acol].Bias = y
+					yy.A.Polynomials[brow][bcol].Bias = x
+					pairs = append(pairs, xx)
+					pairs = append(pairs, yy)
+				} else {
+					a, b := rnd.Intn(20), rnd.Intn(20)
+					arow := rnd.Intn(pairs[a].A.Rows)
+					acol := rnd.Intn(pairs[a].A.Cols)
+					aorder := rnd.Intn(pairs[a].A.Order)
+					avars := rnd.Intn(pairs[a].A.Variables)
+					brow := rnd.Intn(pairs[b].A.Rows)
+					bcol := rnd.Intn(pairs[b].A.Cols)
+					border := rnd.Intn(pairs[b].A.Order)
+					bvars := rnd.Intn(pairs[b].A.Variables)
+					xx := pairs[a].Copy()
+					yy := pairs[b].Copy()
+					x := xx.A.Polynomials[arow][acol].Weights[aorder][avars]
+					y := yy.A.Polynomials[brow][bcol].Weights[border][bvars]
+					xx.A.Polynomials[arow][acol].Weights[aorder][avars] = y
+					yy.A.Polynomials[brow][bcol].Weights[border][bvars] = x
+					pairs = append(pairs, xx)
+					pairs = append(pairs, yy)
+				}
+			} else {
+				if rnd.Intn(4) == 0 {
+					a, b := rnd.Intn(20), rnd.Intn(20)
+					arow := rnd.Intn(pairs[a].B.Rows)
+					acol := rnd.Intn(pairs[a].B.Cols)
+					brow := rnd.Intn(pairs[b].B.Rows)
+					bcol := rnd.Intn(pairs[b].B.Cols)
+					x := pairs[a].B.Polynomials[arow][acol].Bias
+					y := pairs[b].B.Polynomials[brow][bcol].Bias
+					xx := pairs[a].Copy()
+					yy := pairs[b].Copy()
+					xx.B.Polynomials[arow][acol].Bias = y
+					yy.B.Polynomials[brow][bcol].Bias = x
+					pairs = append(pairs, xx)
+					pairs = append(pairs, yy)
+				} else {
+					a, b := rnd.Intn(20), rnd.Intn(20)
+					arow := rnd.Intn(pairs[a].B.Rows)
+					acol := rnd.Intn(pairs[a].B.Cols)
+					aorder := rnd.Intn(pairs[a].B.Order)
+					avars := rnd.Intn(pairs[a].B.Variables)
+					brow := rnd.Intn(pairs[b].B.Rows)
+					bcol := rnd.Intn(pairs[b].B.Cols)
+					border := rnd.Intn(pairs[b].B.Order)
+					bvars := rnd.Intn(pairs[b].B.Variables)
+					xx := pairs[a].Copy()
+					yy := pairs[b].Copy()
+					x := xx.B.Polynomials[arow][acol].Weights[aorder][avars]
+					y := yy.B.Polynomials[brow][bcol].Weights[border][bvars]
+					xx.B.Polynomials[arow][acol].Weights[aorder][avars] = y
+					yy.B.Polynomials[brow][bcol].Weights[border][bvars] = x
+					pairs = append(pairs, xx)
+					pairs = append(pairs, yy)
+				}
+			}
+		} else {
+			if rnd.Intn(2) == 0 {
+				a := rnd.Intn(100)
+				arow := rnd.Intn(pairs[a].A.Rows)
+				acol := rnd.Intn(pairs[a].A.Cols)
+				aorder := rnd.Intn(pairs[a].A.Order)
+				avars := rnd.Intn(pairs[a].A.Variables)
+				xx := pairs[a].Copy()
+				x := xx.A.Polynomials[arow][acol].Weights[aorder][avars]
+				xx.A.Polynomials[arow][acol].Weights[aorder][avars] = x + rnd.ExpFloat64()/10
+				pairs = append(pairs, xx)
+			} else {
+				a := rnd.Intn(100)
+				arow := rnd.Intn(pairs[a].B.Rows)
+				acol := rnd.Intn(pairs[a].B.Cols)
+				aorder := rnd.Intn(pairs[a].B.Order)
+				avars := rnd.Intn(pairs[a].B.Variables)
+				xx := pairs[a].Copy()
+				x := xx.B.Polynomials[arow][acol].Weights[aorder][avars]
+				xx.B.Polynomials[arow][acol].Weights[aorder][avars] = x + rnd.ExpFloat64()/10
+				pairs = append(pairs, xx)
+			}
+		}
+		pairs = pairs[:100]
+	}
 }
