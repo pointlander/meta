@@ -280,8 +280,8 @@ func main() {
 
 	pairs := make([]Pair, 100)
 	for i := range pairs {
-		pairs[i].A = NewMatrix(rnd, 3, 3, 1, 4)
-		pairs[i].B = NewMatrix(rnd, 3, 1, 1, 4)
+		pairs[i].A = NewMatrix(rnd, 3, 3, 2, 4)
+		pairs[i].B = NewMatrix(rnd, 3, 1, 2, 4)
 	}
 	cost := func(pair Pair) float64 {
 		fisher, cost := datum.Fisher, 0.0
