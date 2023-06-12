@@ -298,7 +298,7 @@ func main() {
 	}
 	fmt.Println(cost(pair))
 
-	for j := 0; j < 100; j++ {
+	for e := 0; e < 1024; e++ {
 		for i := range pairs {
 			if pairs[i].Clean {
 				continue
@@ -310,7 +310,7 @@ func main() {
 			return pairs[i].Cost < pairs[j].Cost
 		})
 		pairs = pairs[:100]
-		fmt.Println(j, pairs[0].Cost)
+		fmt.Println(e, pairs[0].Cost)
 		for j := 0; j < 100; j++ {
 			if rnd.Intn(2) == 0 {
 				if rnd.Intn(2) == 0 {
