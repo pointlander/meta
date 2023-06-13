@@ -17,6 +17,11 @@ import (
 	"gonum.org/v1/gonum/mat"
 )
 
+const (
+	//TrainSize is the size of the training set
+	TrainSize = 10
+)
+
 // System represents a linear system with a symmetric band matrix
 //
 //	A*x = b
@@ -283,8 +288,12 @@ func main() {
 		pairs[i].A = NewMatrix(rnd, 3, 3, 2, 4)
 		pairs[i].B = NewMatrix(rnd, 3, 1, 2, 4)
 	}
+	train := make([]iris.Iris, 0, 150)
+	for i := 0; i < 150; i += 50 {
+		train = append(train, datum.Fisher[i:i+TrainSize]...)
+	}
 	cost := func(pair Pair) float64 {
-		fisher, cost := datum.Fisher, 0.0
+		fisher, cost := train, 0.0
 		for _, value := range fisher {
 			out := pair.Inference(value.Measures)
 			target := make([]float64, 3)
