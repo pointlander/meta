@@ -407,4 +407,22 @@ func main() {
 			}
 		}
 	}
+
+	correct := func(pair Pair) int {
+		fisher, correct := datum.Fisher, 0
+		for _, value := range fisher {
+			out := pair.Inference(value.Measures)
+			max, index := 0.0, 0
+			for i, value := range out {
+				if value > max {
+					max, index = value, i
+				}
+			}
+			if index == iris.Labels[value.Label] {
+				correct++
+			}
+		}
+		return correct
+	}
+	fmt.Println("correct=", correct(pairs[0]))
 }
