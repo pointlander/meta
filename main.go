@@ -9,17 +9,39 @@ import (
 	"math"
 	"math/rand"
 	"sort"
+	"strings"
+	"time"
 
 	"github.com/pointlander/datum/iris"
+	"github.com/pointlander/gradient/tf32"
 
 	"gonum.org/v1/exp/linsolve"
 	"gonum.org/v1/gonum/floats"
 	"gonum.org/v1/gonum/mat"
+	"gonum.org/v1/plot"
+	"gonum.org/v1/plot/plotter"
+	"gonum.org/v1/plot/vg"
+	"gonum.org/v1/plot/vg/draw"
 )
 
 const (
 	//TrainSize is the size of the training set
 	TrainSize = 2
+	// B1 exponential decay of the rate for the first moment estimates
+	B1 = 0.9
+	// B2 exponential decay rate for the second-moment estimates
+	B2 = 0.999
+	// Eta is the learning rate
+	Eta = .00001
+)
+
+const (
+	// StateM is the state for the mean
+	StateM = iota
+	// StateV is the state for the variance
+	StateV
+	// StateTotal is the total number of states
+	StateTotal
 )
 
 // System represents a linear system with a symmetric band matrix
@@ -292,7 +314,7 @@ func main() {
 	for i := 0; i < 150; i += 50 {
 		train = append(train, datum.Fisher[i:i+TrainSize]...)
 	}
-	cost := func(pair Pair) float64 {
+	fitness := func(pair Pair) float64 {
 		fisher, cost := train, 0.0
 		for _, value := range fisher {
 			out := pair.Inference(value.Measures)
@@ -305,14 +327,14 @@ func main() {
 		}
 		return cost / 150
 	}
-	fmt.Println(cost(pair))
+	fmt.Println(fitness(pair))
 
 	for e := 0; e < 1024; e++ {
 		for i := range pairs {
 			if pairs[i].Clean {
 				continue
 			}
-			pairs[i].Cost = cost(pairs[i])
+			pairs[i].Cost = fitness(pairs[i])
 			pairs[i].Clean = true
 		}
 		sort.Slice(pairs, func(i, j int) bool {
@@ -453,6 +475,159 @@ func main() {
 		}
 	}
 
+	neuralNetworkCorrect := 0
+	set := tf32.NewSet()
+	set.Add("w1", 4, 8)
+	set.Add("b1", 8, 1)
+	set.Add("w2", 2*8, 3)
+	set.Add("b2", 3, 1)
+	for _, w := range set.Weights {
+		if strings.HasPrefix(w.N, "b") {
+			w.X = w.X[:cap(w.X)]
+			w.States = make([][]float32, StateTotal)
+			for i := range w.States {
+				w.States[i] = make([]float32, len(w.X))
+			}
+			continue
+		}
+		factor := math.Sqrt(2.0 / float64(w.S[0]))
+		for i := 0; i < cap(w.X); i++ {
+			w.X = append(w.X, float32((2*rnd.Float64()-1)*factor))
+		}
+		w.States = make([][]float32, StateTotal)
+		for i := range w.States {
+			w.States[i] = make([]float32, len(w.X))
+		}
+	}
+
+	others := tf32.NewSet()
+	others.Add("inputs", 4, 3*TrainSize)
+	others.Add("outputs", 3, 3*TrainSize)
+	inputs := others.ByName["inputs"]
+	outputs := others.ByName["outputs"]
+	for _, value := range train {
+		for _, measure := range value.Measures {
+			inputs.X = append(inputs.X, float32(measure))
+		}
+		out := make([]float32, 3)
+		out[iris.Labels[value.Label]] = 1
+		outputs.X = append(outputs.X, out...)
+	}
+
+	l1 := tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), others.Get("inputs")), set.Get("b1")))
+	l2 := tf32.Softmax(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
+	cost := tf32.Avg(tf32.CrossEntropy(l2, others.Get("outputs")))
+
+	i := 1
+	pow := func(x float32) float32 {
+		y := math.Pow(float64(x), float64(i))
+		if math.IsNaN(y) || math.IsInf(y, 0) {
+			return 0
+		}
+		return float32(y)
+	}
+	points := make(plotter.XYs, 0, 8)
+	// The stochastic gradient descent loop
+	for i < 64*1024 {
+		start := time.Now()
+
+		// Calculate the gradients
+		total := tf32.Gradient(cost).X[0]
+
+		sum := float32(0.0)
+		for _, p := range set.Weights {
+			for _, d := range p.D {
+				sum += d * d
+			}
+		}
+		norm := float32(math.Sqrt(float64(sum)))
+		scaling := float32(1.0)
+		if norm > 1 {
+			scaling = 1 / norm
+		}
+
+		// Update the point weights with the partial derivatives using adam
+		b1, b2 := pow(B1), pow(B2)
+		for j, w := range set.Weights {
+			for k, d := range w.D {
+				g := d * scaling
+				m := B1*w.States[StateM][k] + (1-B1)*g
+				v := B2*w.States[StateV][k] + (1-B2)*g*g
+				w.States[StateM][k] = m
+				w.States[StateV][k] = v
+				mhat := m / (1 - b1)
+				vhat := v / (1 - b2)
+				set.Weights[j].X[k] -= Eta * mhat / (float32(math.Sqrt(float64(vhat))) + 1e-8)
+			}
+		}
+
+		// Housekeeping
+		end := time.Since(start)
+		fmt.Println(i, total, end)
+
+		if math.IsNaN(float64(total)) {
+			fmt.Println(total)
+			break
+		}
+
+		set.Zero()
+		others.Zero()
+
+		points = append(points, plotter.XY{X: float64(i), Y: float64(total)})
+		i++
+	}
+
+	// Plot the cost
+	p := plot.New()
+
+	p.Title.Text = "epochs vs cost"
+	p.X.Label.Text = "epochs"
+	p.Y.Label.Text = "cost"
+
+	scatter, err := plotter.NewScatter(points)
+	if err != nil {
+		panic(err)
+	}
+	scatter.GlyphStyle.Radius = vg.Length(1)
+	scatter.GlyphStyle.Shape = draw.CircleGlyph{}
+	p.Add(scatter)
+
+	err = p.Save(8*vg.Inch, 8*vg.Inch, "cost.png")
+	if err != nil {
+		panic(err)
+	}
+
+	others = tf32.NewSet()
+	others.Add("inputs", 4, len(datum.Fisher))
+	others.Add("outputs", 3, len(datum.Fisher))
+	inputs = others.ByName["inputs"]
+	outputs = others.ByName["outputs"]
+	for _, value := range datum.Fisher {
+		for _, measure := range value.Measures {
+			inputs.X = append(inputs.X, float32(measure))
+		}
+		out := make([]float32, 3)
+		out[iris.Labels[value.Label]] = 1
+		outputs.X = append(outputs.X, out...)
+	}
+	l1 = tf32.Everett(tf32.Add(tf32.Mul(set.Get("w1"), others.Get("inputs")), set.Get("b1")))
+	l2 = tf32.Softmax(tf32.Add(tf32.Mul(set.Get("w2"), l1), set.Get("b2")))
+	l2(func(a *tf32.V) bool {
+		for i, value := range datum.Fisher {
+			max, index := float32(0.0), 0
+			for j := 0; j < 3; j++ {
+				if v := a.X[i*3+j]; v > max {
+					max, index = v, j
+				}
+			}
+			if index == iris.Labels[value.Label] {
+				neuralNetworkCorrect++
+			}
+		}
+		return false
+	})
+
 	fmt.Println("meta correct=", metaCorrect, float64(metaCorrect)/float64(len(datum.Fisher)))
 	fmt.Println("nearest neighbor correct=", nearestNeighborCorrect, float64(nearestNeighborCorrect)/float64(len(datum.Fisher)))
+	fmt.Println("neural network correct=", neuralNetworkCorrect, float64(neuralNetworkCorrect)/float64(len(datum.Fisher)))
 }
