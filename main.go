@@ -166,6 +166,37 @@ func NewMatrix(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
 	}
 }
 
+// NewMatrixZeros generates a new matrix with zeros for all other entries than the first row
+func NewMatrixZeros(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
+	polynomials := make([][]Polynomial, rows)
+	for i := range polynomials {
+		row := make([]Polynomial, cols)
+		for j := range row {
+			weights := make([][]float64, order)
+			for k := range weights {
+				weight := make([]float64, variables)
+				for l := range weight {
+					if i > 0 {
+						continue
+					}
+					weight[l] = rnd.NormFloat64()
+				}
+				weights[k] = weight
+			}
+			row[j].Bias = rnd.NormFloat64()
+			row[j].Weights = weights
+		}
+		polynomials[i] = row
+	}
+	return Matrix{
+		Rows:        rows,
+		Cols:        cols,
+		Order:       order,
+		Variables:   variables,
+		Polynomials: polynomials,
+	}
+}
+
 // ToMatrix converts a matrix to a matrix
 func (m *Matrix) ToMatrix(parameters []float64) *Dense {
 	data := make([]float64, 0, m.Rows*m.Cols)
