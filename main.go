@@ -19,7 +19,7 @@ import (
 
 const (
 	//TrainSize is the size of the training set
-	TrainSize = 10
+	TrainSize = 2
 )
 
 // System represents a linear system with a symmetric band matrix
@@ -433,5 +433,6 @@ func main() {
 		}
 		return correct
 	}
-	fmt.Println("correct=", correct(pairs[0]))
+	c := correct(pairs[0])
+	fmt.Println("correct=", c, float64(c)/float64(len(datum.Fisher)))
 }
