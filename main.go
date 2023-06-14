@@ -433,6 +433,26 @@ func main() {
 		}
 		return correct
 	}
-	c := correct(pairs[0])
-	fmt.Println("correct=", c, float64(c)/float64(len(datum.Fisher)))
+	metaCorrect := correct(pairs[0])
+
+	nearestNeighborCorrect := 0
+	for _, value := range datum.Fisher {
+		min, index := math.MaxFloat64, 0
+		for i, neighbor := range train {
+			distance := 0.0
+			for j, measure := range neighbor.Measures {
+				diff := measure - value.Measures[j]
+				distance += diff * diff
+			}
+			if distance < min {
+				min, index = distance, i
+			}
+		}
+		if index == iris.Labels[value.Label] {
+			nearestNeighborCorrect++
+		}
+	}
+
+	fmt.Println("meta correct=", metaCorrect, float64(metaCorrect)/float64(len(datum.Fisher)))
+	fmt.Println("nearest neighbor correct=", nearestNeighborCorrect, float64(nearestNeighborCorrect)/float64(len(datum.Fisher)))
 }
