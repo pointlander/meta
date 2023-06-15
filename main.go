@@ -141,6 +141,7 @@ func (m *Matrix) Copy() Matrix {
 // NewMatrix generates a new matrix
 func NewMatrix(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
 	polynomials := make([][]Polynomial, rows)
+	factor := math.Sqrt(2.0 / float64(variables))
 	for i := range polynomials {
 		row := make([]Polynomial, cols)
 		for j := range row {
@@ -148,11 +149,11 @@ func NewMatrix(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
 			for k := range weights {
 				weight := make([]float64, variables)
 				for l := range weight {
-					weight[l] = rnd.NormFloat64()
+					weight[l] = rnd.NormFloat64() * factor
 				}
 				weights[k] = weight
 			}
-			row[j].Bias = rnd.NormFloat64()
+			row[j].Bias = rnd.NormFloat64() * factor
 			row[j].Weights = weights
 		}
 		polynomials[i] = row
@@ -169,6 +170,7 @@ func NewMatrix(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
 // NewMatrixZeros generates a new matrix with zeros for all other entries than the first row
 func NewMatrixZeros(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
 	polynomials := make([][]Polynomial, rows)
+	factor := math.Sqrt(2.0 / float64(variables))
 	for i := range polynomials {
 		row := make([]Polynomial, cols)
 		for j := range row {
@@ -179,11 +181,11 @@ func NewMatrixZeros(rnd *rand.Rand, rows, cols, order, variables int) Matrix {
 					if i > 0 {
 						continue
 					}
-					weight[l] = rnd.NormFloat64()
+					weight[l] = rnd.NormFloat64() * factor
 				}
 				weights[k] = weight
 			}
-			row[j].Bias = rnd.NormFloat64()
+			row[j].Bias = rnd.NormFloat64() * factor
 			row[j].Weights = weights
 		}
 		polynomials[i] = row
